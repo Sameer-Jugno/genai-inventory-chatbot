@@ -1,11 +1,11 @@
 # Architecture Decision Record
 
-Decisions made while implementing the CandyWagon POC, recorded so each
+Decisions made while implementing the Inventory Planner POC, recorded so each
 component in the deployed system can be traced back to a requirement or an
 explicit engineering choice.
 
-Sources of truth: `SOW-Candywagon-POC-Candywagon Pilot.pdf` and
-`CandyWagon Architecture.png` (both held locally, not committed).
+Sources of truth: the client SOW PDF and architecture diagram (both held
+locally under generic local filenames, not committed).
 
 Anything in this file marked **Delta** is a component that does *not* appear in
 the client architecture diagram. The SOW requires the final runbook to document

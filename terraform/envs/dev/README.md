@@ -1,4 +1,4 @@
-# CandyWagon — Terraform `dev` environment
+# Inventory Planner — Terraform `dev` environment
 
 This folder is the **only place** you should run Terraform for the Phase 1
 platform stack. Modules under `../../modules` are libraries; this env wires them.

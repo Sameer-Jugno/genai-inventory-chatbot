@@ -5,7 +5,7 @@
 variable "project_name" {
   description = "Short project name used in AWS resource names."
   type        = string
-  default     = "candywagon"
+  default     = "inventory-planner"
 }
 
 variable "environment" {
@@ -40,7 +40,7 @@ variable "common_tags" {
   type        = map(string)
 
   default = {
-    Project     = "candywagon"
+    Project     = "inventory-planner"
     Environment = "dev"
     ManagedBy   = "terraform"
   }

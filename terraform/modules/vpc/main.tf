@@ -1,6 +1,6 @@
 /*
 Purpose:
-Creates the networking foundation for the CandyWagon POC, including:
+Creates the networking foundation for the Inventory Planner POC, including:
 - VPC
 - Public subnets
 - Private subnet

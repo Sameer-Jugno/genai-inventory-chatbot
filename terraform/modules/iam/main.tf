@@ -1,6 +1,6 @@
 /*
 Purpose:
-Creates the IAM roles and policies required by the CandyWagon compute
+Creates the IAM roles and policies required by the Inventory Planner compute
 components (ECS Fargate and Lambda) to access AWS services provisioned
 by earlier infrastructure modules.
 

@@ -1,8 +1,8 @@
 /*
 Purpose:
 Creates the Amazon ECR repository holding the container image for the
-CandyWagon chat application (Chainlit interface + Strands agent) that runs
-on ECS Fargate.
+Inventory Planner chat application (Chainlit interface + Strands agent) that
+runs on ECS Fargate.
 
 NOTE:
 Immutable tags force every deployment to reference a unique image tag (Git

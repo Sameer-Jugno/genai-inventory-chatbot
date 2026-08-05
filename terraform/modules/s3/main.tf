@@ -1,6 +1,6 @@
 /*
 Purpose:
-Creates one private Amazon S3 data bucket for the CandyWagon POC.
+Creates one private Amazon S3 data bucket for the Inventory Planner POC.
 
 Object prefixes separate the two data lifecycles:
 - uploads/ — raw CSV, PDF, or scraped HTML placed by an administrator

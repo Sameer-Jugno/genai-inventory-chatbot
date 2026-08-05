@@ -1,6 +1,6 @@
 /*
 Purpose:
-Creates the networking resources required to expose the CandyWagon chat
+Creates the networking resources required to expose the Inventory Planner chat
 application through an internet-facing Application Load Balancer (ALB).
 
 NOTE:

@@ -1,7 +1,7 @@
 /*
 Purpose:
 Creates the Amazon DynamoDB table used to store chat session history for
-the CandyWagon application.
+the Inventory Planner application.
 
 This module is a deliberate addition beyond the client architecture diagram.
 Conversation state cannot live in container memory because ECS Fargate tasks

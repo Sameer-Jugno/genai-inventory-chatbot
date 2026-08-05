@@ -1,7 +1,7 @@
 /*
 Purpose:
 Creates the Amazon Cognito User Pool and User Pool Client used for
-authentication in the CandyWagon chat application.
+authentication in the Inventory Planner chat application.
 
 This module is a deliberate addition beyond the client architecture diagram,
 which shows no authentication in front of the internet-facing ALB. See

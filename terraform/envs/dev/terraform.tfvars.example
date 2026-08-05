@@ -5,7 +5,7 @@
 # before `terraform plan` / `apply`.
 
 # --- Safe now (can keep as-is) ---
-project_name = "candywagon"
+project_name = "inventory-planner"
 environment  = "dev"
 
 vpc_cidr = "10.0.0.0/16"
@@ -16,7 +16,7 @@ public_subnet_cidrs = [
 private_subnet_cidr = "10.0.10.0/24"
 
 common_tags = {
-  Project     = "candywagon"
+  Project     = "inventory-planner"
   Environment = "dev"
   ManagedBy   = "terraform"
 }
@@ -27,7 +27,7 @@ common_tags = {
 aws_region = "us-east-1" # PLACEHOLDER
 
 # Named profile from `aws configure` / SSO. Leave "" to use env vars / default chain.
-aws_profile = "" # PLACEHOLDER — e.g. "candywagon-dev"
+aws_profile = "" # PLACEHOLDER — e.g. "inventory-planner-dev"
 
 # Must be two real AZs in aws_region above.
 availability_zones = [

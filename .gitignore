@@ -4,6 +4,8 @@
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+tfplan
+*.tfplan
 
 # Provider lock files belong to an environment root, not to reusable modules.
 # The lock file under terraform/envs/*/ IS committed.
@@ -13,5 +15,5 @@ terraform/modules/**/.terraform.lock.hcl
 .env
 
 # Confidential client documents — keep local only
-SOW-Candywagon-POC-Candywagon Pilot.pdf
-CandyWagon Architecture.png
+SOW*.pdf
+*Architecture*.png
