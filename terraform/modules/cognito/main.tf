@@ -3,6 +3,10 @@ Purpose:
 Creates the Amazon Cognito User Pool and User Pool Client used for
 authentication in the CandyWagon chat application.
 
+This module is a deliberate addition beyond the client architecture diagram,
+which shows no authentication in front of the internet-facing ALB. See
+docs/DECISIONS.md (ADR-001) for the reasoning and the alternatives rejected.
+
 Deliberately excluded:
 - Identity Pool: Not required because the application does not provide direct AWS resource access to authenticated users.
 - MFA: Omitted for this training POC to keep the authentication flow simple.

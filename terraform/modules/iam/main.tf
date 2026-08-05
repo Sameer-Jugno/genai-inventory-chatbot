@@ -22,11 +22,11 @@ locals {
   ecs_task_role_name           = "${var.project_name}-${var.environment}-ecs-task-role"
   lambda_execution_role_name   = "${var.project_name}-${var.environment}-lambda-execution-role"
 
-  claude_inference_profile_arn = "arn:aws:bedrock:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_claude_inference_profile_id}"
+  claude_inference_profile_arn = "arn:aws:bedrock:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_claude_inference_profile_id}"
 
-  claude_foundation_model_arn = "arn:aws:bedrock:${data.aws_region.current.name}::foundation-model/${var.bedrock_claude_foundation_model_id}"
+  claude_foundation_model_arn = "arn:aws:bedrock:${data.aws_region.current.region}::foundation-model/${var.bedrock_claude_foundation_model_id}"
 
-  titan_foundation_model_arn = "arn:aws:bedrock:${data.aws_region.current.name}::foundation-model/${var.bedrock_titan_embedding_model_id}"
+  titan_foundation_model_arn = "arn:aws:bedrock:${data.aws_region.current.region}::foundation-model/${var.bedrock_titan_embedding_model_id}"
 }
 
 resource "aws_iam_role" "ecs_task_execution" {
@@ -137,28 +137,18 @@ resource "aws_iam_role_policy" "ecs_task" {
 
         Resource = var.dynamodb_table_arn
       },
+      # Cognito end-user auth happens in the client. The app verifies JWTs using
+      # Cognito's public JWKS endpoint — that needs no cognito-idp IAM permissions.
+      # See docs/DECISIONS.md (ADR-001).
       {
-        Sid    = "CognitoAuthentication"
-        Effect = "Allow"
-
-        Action = [
-          "cognito-idp:InitiateAuth",
-          "cognito-idp:RespondToAuthChallenge",
-          "cognito-idp:GetUser",
-          "cognito-idp:GlobalSignOut"
-        ]
-
-        Resource = var.cognito_user_pool_arn
-      },
-      {
-        Sid    = "ReadImagesBucket"
+        Sid    = "ReadProcessedImages"
         Effect = "Allow"
 
         Action = [
           "s3:GetObject"
         ]
 
-        Resource = "${var.images_bucket_arn}/*"
+        Resource = "${var.data_bucket_arn}/images/*"
       }
 
       # TODO: Add OpenSearch permissions when Module 2.1
@@ -248,24 +238,24 @@ resource "aws_iam_role_policy" "lambda_execution" {
         Resource = local.titan_foundation_model_arn
       },
       {
-        Sid    = "ReadUploadsBucket"
+        Sid    = "ReadRawUploads"
         Effect = "Allow"
 
         Action = [
           "s3:GetObject"
         ]
 
-        Resource = "${var.uploads_bucket_arn}/*"
+        Resource = "${var.data_bucket_arn}/uploads/*"
       },
       {
-        Sid    = "WriteImagesBucket"
+        Sid    = "WriteProcessedImages"
         Effect = "Allow"
 
         Action = [
           "s3:PutObject"
         ]
 
-        Resource = "${var.images_bucket_arn}/*"
+        Resource = "${var.data_bucket_arn}/images/*"
       }
 
       # TODO: Add OpenSearch permissions when Module 2.1

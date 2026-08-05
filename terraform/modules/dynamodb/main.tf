@@ -3,6 +3,10 @@ Purpose:
 Creates the Amazon DynamoDB table used to store chat session history for
 the CandyWagon application.
 
+This module is a deliberate addition beyond the client architecture diagram.
+Conversation state cannot live in container memory because ECS Fargate tasks
+are replaceable. See docs/DECISIONS.md (ADR-002).
+
 NOTE:
 TTL is enabled on the expires_at attribute — application code is
 responsible for setting this value on write (e.g., session creation

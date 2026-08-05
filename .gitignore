@@ -3,8 +3,10 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
+!*.tfvars.example
 
 # Provider lock files belong to an environment root, not to reusable modules.
+# The lock file under terraform/envs/*/ IS committed.
 terraform/modules/**/.terraform.lock.hcl
 
 # Secrets

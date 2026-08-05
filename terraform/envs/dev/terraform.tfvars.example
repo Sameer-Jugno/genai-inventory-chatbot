@@ -1,0 +1,41 @@
+# Copy this file to terraform.tfvars (gitignored) after you have AWS account access.
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Values marked PLACEHOLDER must be confirmed against the real account/region
+# before `terraform plan` / `apply`.
+
+# --- Safe now (can keep as-is) ---
+project_name = "candywagon"
+environment  = "dev"
+
+vpc_cidr = "10.0.0.0/16"
+public_subnet_cidrs = [
+  "10.0.0.0/24",
+  "10.0.1.0/24"
+]
+private_subnet_cidr = "10.0.10.0/24"
+
+common_tags = {
+  Project     = "candywagon"
+  Environment = "dev"
+  ManagedBy   = "terraform"
+}
+
+# --- PLACEHOLDERS: update after AWS account access ---
+
+# Region where the stack will live. Must support Bedrock models you need.
+aws_region = "us-east-1" # PLACEHOLDER
+
+# Named profile from `aws configure` / SSO. Leave "" to use env vars / default chain.
+aws_profile = "" # PLACEHOLDER — e.g. "candywagon-dev"
+
+# Must be two real AZs in aws_region above.
+availability_zones = [
+  "us-east-1a", # PLACEHOLDER
+  "us-east-1b"  # PLACEHOLDER
+]
+
+# Confirm in Bedrock console after model access is enabled in the account.
+bedrock_claude_inference_profile_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0" # PLACEHOLDER
+bedrock_claude_foundation_model_id  = "anthropic.claude-sonnet-4-5-20250929-v1:0"    # PLACEHOLDER
+bedrock_titan_embedding_model_id    = "amazon.titan-embed-text-v2:0"                 # PLACEHOLDER

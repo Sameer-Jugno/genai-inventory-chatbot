@@ -13,18 +13,8 @@ variable "dynamodb_table_arn" {
   type        = string
 }
 
-variable "cognito_user_pool_arn" {
-  description = "ARN of the Amazon Cognito User Pool."
-  type        = string
-}
-
-variable "uploads_bucket_arn" {
-  description = "ARN of the S3 uploads bucket."
-  type        = string
-}
-
-variable "images_bucket_arn" {
-  description = "ARN of the S3 images bucket."
+variable "data_bucket_arn" {
+  description = "ARN of the shared S3 data bucket containing uploads/ and images/ prefixes."
   type        = string
 }
 
