@@ -1,0 +1,15 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Provider lock files belong to an environment root, not to reusable modules.
+terraform/modules/**/.terraform.lock.hcl
+
+# Secrets
+.env
+
+# Confidential client documents — keep local only
+SOW-Candywagon-POC-Candywagon Pilot.pdf
+CandyWagon Architecture.png
