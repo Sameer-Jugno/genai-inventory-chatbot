@@ -240,3 +240,324 @@ as soon as their lifecycles diverge.
 | Cognito User Pool | No | Gate access to a public endpoint invoking Bedrock on the Client's account |
 | DynamoDB sessions table | No | Multi-turn conversation must survive Fargate task replacement |
 | One S3 data bucket | No (diagram shows two) | Shared lifecycle; prefixes retain IAM and event separation for the POC |
+
+---
+
+## ADR-005 — OpenSearch Serverless for the inventory vector catalog
+
+**Status:** Accepted (pending account capability check)
+
+### Context
+
+The SOW requires a vector database so conversational queries can retrieve relevant
+event-planning inventory. The architecture diagram names OpenSearch. For a
+training POC the catalog will be small and often idle between demos.
+
+### Decision
+
+Use **Amazon OpenSearch Serverless** with collection type `VECTORSEARCH` when
+the account/region supports it. Fall back to a single-node managed OpenSearch
+domain only if Serverless is unavailable.
+
+Index mapping (created by script, not Terraform):
+
+- `embedding` — knn_vector, dimension **1024**, cosine similarity (Titan Embeddings V2)
+- Keyword/numeric fields for `vendor`, `tags`, `source_type`, `quantity`, etc.
+
+### Rationale
+
+Serverless avoids paying for a always-on domain while the stack sits unused.
+VECTORSEARCH matches the RAG access pattern. Managed OpenSearch remains a valid
+fallback but has a continuous idle cost that is a poor fit for training.
+
+### Consequences
+
+- Confirm Serverless availability in `us-east-1` before apply.
+- IAM must allow the ingestion role to write and the future ECS task role to read.
+- Index mappings live in `scripts/opensearch_index_mapping.json` and are applied
+  by `scripts/create_opensearch_index.py` after the collection exists.
+
+### Revisit when
+
+Serverless is unavailable, cost exceeds expectations, or filter+vector query
+latency is unacceptable for UAT.
+
+---
+
+## ADR-006 — One OpenSearch document per inventory item
+
+**Status:** Accepted
+
+### Context
+
+Generic RAG often chunks long documents into fixed-size passages. This POC is an
+**inventory catalog**, not a document library. The SOW asks for description,
+dimensions, quantity, images, and tags per asset.
+
+### Decision
+
+Each inventory item is **exactly one** OpenSearch document. CSV rows map 1:1.
+PDFs and scraped pages are normalized by an LLM into zero or more item records,
+each stored as its own document.
+
+Embedding input (must match at query time):
+
+```text
+{name} | {description} | category: {...} | subcategory: {...} |
+dimensions: {...} | features: {...} | colors: {...} | tags: {...}
+```
+
+### Rationale
+
+Retrieval must return whole items the planner can use, not mid-paragraph
+fragments. Item-level documents keep filters (vendor, tags, quantity) aligned
+with the business object.
+
+### Consequences
+
+- Shared schema lives in `shared/schema/` and is imported by ingestion and
+  (later) the chat retrieval path.
+- Re-ingestion upserts by deterministic `item_id` to stay idempotent.
+
+### Revisit when
+
+Vendors supply long unstructured brochures where passage-level RAG is clearly
+better than item extraction — unlikely for this SOW.
+
+---
+
+## ADR-007 — S3 → Lambda ingest with DLQ; scrape is a secondary feeder
+
+**Status:** Accepted
+
+### Context
+
+The diagram shows S3 uploads triggering Lambda, which calls Bedrock and writes
+OpenSearch and images. The SOW prioritizes structured uploads over scraping.
+
+### Decision
+
+- Ingestion is an S3 event on prefix `uploads/` only.
+- Failed invocations go to an SQS dead-letter queue.
+- Scraper (Phase 2.5) only produces payloads that enter the **same** schema and
+  pipeline — no parallel indexing path.
+
+### Rationale
+
+Prefix filtering prevents image writes from re-triggering ingest. A single
+pipeline keeps UAT and debugging simple. DLQ makes silent data loss visible.
+
+### Revisit when
+
+Very large files need async Step Functions orchestration — not required for POC
+file sizes assumed by the SOW.
+
+---
+
+## ADR-008 — Normalize heterogeneous catalogs into retrieval-ready item records
+
+**Status:** Accepted
+
+### Context
+
+The supplied samples are not one uniform CSV:
+
+- a 200-row fixed-width chair export with SKU, product URL, description,
+  quantity, unit price, dimensions, and sparse tags;
+- scraper-export XLSX catalogs with prose quantities, image URLs, category
+  hierarchies, and duplicated snapshots;
+- a sparse master XLSX with multiple inventory categories, optional 3D
+  references, and embedded row-anchored PNG assets;
+- a 242-page website-print PDF with one SKU, price, quantity, and dimensions
+  block per product page;
+- an eight-page visual chair catalog whose extracted text contains categories
+  and names but no reliable prices or quantities;
+- a 60-page inventory catalog with one or more items per page, categories,
+  descriptions, dimensions/features, and no reliable per-item price;
+- one `.csv` containing prose rather than an inventory table.
+
+The sample user queries also ask for budget, vendor consolidation, location,
+date availability, quantity, and aesthetic matching. The supplied catalogs do
+not contain every one of those facts.
+
+### Decision
+
+Normalize every valid source into schema version 2 with:
+
+- stable source identity (`source_item_id`/SKU or product URL when present);
+- item name, description, category/subcategory, features, dimensions;
+- quantity, unit price, currency, source page, and product URL only when
+  actually supplied;
+- deterministic controlled tags plus source/LLM tags;
+- one canonical `search_text` field used for both Titan embedding and lexical
+  retrieval.
+
+CSV, fixed-width tables, XLSX workbooks, and one-product-per-page PDFs use
+deterministic parsers. XLSX embedded images are associated by worksheet row and
+copied to the image prefix. Other PDFs are split on page boundaries (maximum
+eight detail pages/two dense listing pages and 10,000 characters per model
+call), then Claude extracts structured items. Repeated TOC/detail records are
+deduplicated by stable item identity, keeping the richer record. Invalid
+inventory files fail loudly so the Lambda DLQ surfaces them instead of
+reporting false success.
+
+When duplicate exports resolve to the same item ID, OpenSearch uses a
+completeness score (SKU, description, price/quantity, dimensions, links,
+images, tags) and refuses to replace a richer document with a weaker one.
+
+### Consequences
+
+- Budget, quantity, category, vendor, and semantic retrieval are supported by
+  indexed fields.
+- Date availability and vendor service area must not be inferred when absent.
+  The future chat layer must clearly state that live availability is unknown.
+- Direct `image_url` fields and row-anchored XLSX images are copied into
+  `images/`. Embedded PDF images are not auto-associated because multi-item
+  visual pages do not provide a reliable image-to-item key; the item keeps its
+  source PDF/page or product URL.
+- Persona behavior, floor-plan calculations, mood-board analysis, and
+  fewest-vendor optimization belong to the Phase 3 agent/retrieval layer; the
+  Phase 2 index now preserves the facts those tools can safely use.
+- Client-supplied raw files remain local and gitignored; only generic parser
+  fixtures are committed.
+
+---
+
+## ADR-009 — Chainlit + Bedrock Converse tool-use for the chat agent
+
+**Status:** Accepted
+
+### Context
+
+The architecture diagram and ECR module describe a Chainlit interface with an
+agent running on ECS Fargate. Sample queries ask for curated rental lists,
+budget awareness, vendor consolidation, and aesthetic matching against the
+indexed catalog. The ECR comment names “Strands”; the ECS task role already
+grants Bedrock `InvokeModel` / `InvokeModelWithResponseStream` on the Claude
+inference profile used elsewhere in the POC.
+
+### Decision
+
+Ship Chainlit as the UI and implement the agent with Amazon Bedrock
+**Converse tool-use** (not a separate agent framework). The single retrieval
+tool is `search_inventory`, backed by the same Titan + OpenSearch path as
+Phase 2 smoke scripts. Pure Python helpers format hits, estimate budgets from
+indexed prices, and group results by vendor.
+
+### Rationale
+
+Converse tool-use is the AWS API the task role already authorizes and matches
+the ingestion extraction client’s Bedrock usage. Adding Strands would introduce
+another SDK and release cadence without changing the tool contract or the
+retrieval path. Chainlit remains the named UI surface for UAT.
+
+### Alternatives considered
+
+- **Strands Agents SDK.** Matches the ECR comment literally. Deferred: same
+  tool contract can be wrapped later without changing OpenSearch or schema.
+- **LangChain / LlamaIndex.** Rejected for POC surface area.
+- **Direct RAG prompt without tools.** Rejected: filters (price, quantity,
+  category, vendor) are clearer and more testable as structured tool input.
+
+### Consequences
+
+- Chat depends on Phase 2 index fields and `OpenSearchInventoryClient.vector_search`.
+- Mood-board vision, floor-plan solvers, and hard fewest-vendor optimization
+  stay out of the POC agent; the persona states limits honestly.
+- ECS task role must invoke Titan at query time (added beside Claude).
+
+### Revisit when
+
+Strands (or another framework) is mandated by the client diagram review, or
+multi-tool workflows (vision, packing) become in-scope.
+
+---
+
+## ADR-010 — One retrieval tool with structured filters
+
+**Status:** Accepted
+
+### Context
+
+Persona queries mix semantic intent (“Slim Aarons”, “old Bollywood”) with
+constraints (guest count, budget, NYC/Brooklyn). Schema v2 already stores
+category, unit_price, quantity, vendor, and colors as filterable fields.
+
+### Decision
+
+Expose a single tool, `search_inventory`, with optional filters:
+
+- `query` (required) — embedded with Titan; must mirror ingest `embedding_text`
+- `category`, `vendor`, `color`
+- `max_unit_price`, `min_quantity`
+- `size` (hit count, capped)
+
+The agent may call the tool more than once per turn. Responses must not invent
+price, quantity, availability, date holds, or service areas when absent from
+hits. Live availability is always stated as unknown unless a future data
+source supplies it.
+
+### Consequences
+
+- `scripts/query_inventory.py` and `scripts/chat_turn.py` share the same client.
+- Budget figures in chat are sums/estimates over returned `unit_price` values
+  only; missing prices are called out.
+
+---
+
+## ADR-011 — Cognito JWT verification via JWKS; sessions in DynamoDB
+
+**Status:** Accepted
+
+### Context
+
+ADR-001 requires Cognito for UAT users. ADR-002 provisioned DynamoDB with
+`session_id` (HASH) + `timestamp` (RANGE) and TTL on `expires_at`. The ECS
+task role intentionally has no `cognito-idp:*` permissions.
+
+### Decision
+
+- Chainlit authenticates requests by verifying a Cognito **access token**
+  (Bearer) against the user pool JWKS over HTTPS. No Cognito API IAM on the task.
+- Each user/assistant turn is written to the existing DynamoDB table with
+  `expires_at = now + 30 days`. History for a session is a `Query` on
+  `session_id` ordered by `timestamp`.
+
+### Consequences
+
+- UAT users must present a valid Cognito access token (issued outside the
+  container — hosted UI or admin/CLI flows operated by the team).
+- Chainlit’s built-in data layer is not used as the source of truth; our
+  session adapter owns the ADR-002 schema.
+- ALB remains HTTP for the POC (no ACM); Cognito is application-level, not
+  ALB `authenticate-cognito`.
+
+---
+
+## ADR-012 — Groq + Hugging Face while Bedrock account access is blocked
+
+**Status:** Accepted (temporary provider path for training POC)
+
+### Context
+
+Personal and corporate AWS accounts returned `authorizationStatus: NOT_AUTHORIZED`
+for Bedrock Titan/Claude despite IAM and payment fixes. Waiting on AWS Support
+blocks end-to-end demo of an otherwise complete Phase 2/3 stack.
+
+### Decision
+
+- **Embeddings:** Hugging Face Inference (`BAAI/bge-large-en-v1.5`, 1024-d) via HTTPS.
+- **LLM (extract + chat tool-use):** Groq OpenAI-compatible API (`llama-3.3-70b-versatile`).
+- **Secrets:** `GROQ_API_KEY` + `HF_TOKEN` in AWS Secrets Manager
+  (`PROVIDER_SECRETS_ARN`); local `.env` for offline smoke tests only.
+- Keep OpenSearch mapping at dimension **1024** (same as Titan), so the existing
+  index shape remains valid after re-ingest.
+- Visual PDF document-vision (Bedrock Converse documents) is not available on Groq;
+  fall back to extractable page text or require CSV/XLSX/text PDF.
+
+### Consequences
+
+- Demo no longer depends on Bedrock Marketplace authorization.
+- Lambda/ECS need outbound HTTPS (Lambda is not VPC-bound; ECS private subnet uses NAT).
+- Re-ingest catalog after switching providers (embedding space differs from Titan).
+- Bedrock can be restored later by swapping client modules only; tool contract stays.

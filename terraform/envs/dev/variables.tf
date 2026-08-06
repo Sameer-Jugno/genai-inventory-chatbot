@@ -81,23 +81,65 @@ variable "availability_zones" {
   }
 }
 
-variable "bedrock_claude_inference_profile_id" {
-  description = "Bedrock inference profile ID for Claude. Confirm in the account console after model access is granted."
+variable "groq_model_id" {
+  description = "Groq chat/extraction model ID."
   type        = string
-  # PLACEHOLDER — verify against Bedrock console in the target account/region
-  default = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "llama-3.3-70b-versatile"
 }
 
-variable "bedrock_claude_foundation_model_id" {
-  description = "Bedrock foundation model ID for Claude. Confirm in the account console after model access is granted."
+variable "hf_embed_model_id" {
+  description = "Hugging Face embedding model ID (feature-extraction)."
   type        = string
-  # PLACEHOLDER — verify against Bedrock console in the target account/region
-  default = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "BAAI/bge-large-en-v1.5"
 }
 
-variable "bedrock_titan_embedding_model_id" {
-  description = "Bedrock Titan Embeddings model ID used by the ingestion path."
+variable "enable_iam" {
+  description = "Create IAM roles/policies. Requires iam:CreateRole. Keep false until the lead grants IAM permissions."
+  type        = bool
+  default     = false
+}
+
+variable "enable_phase2" {
+  description = "Create OpenSearch Serverless + ingestion Lambda. Requires enable_iam and a built dist/ingestion.zip."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_phase2 || var.enable_iam
+    error_message = "enable_phase2 requires enable_iam = true (Lambda/ECS roles must exist for AOSS data-access principals)."
+  }
+}
+
+variable "enable_phase3" {
+  description = "Create ECS Fargate chat service and forward ALB traffic. Requires enable_phase2 and chat_container_image."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_phase3 || var.enable_phase2
+    error_message = "enable_phase3 requires enable_phase2 = true (chat retrieves from OpenSearch)."
+  }
+}
+
+variable "chat_container_image" {
+  description = "ECR image URI for the chat service (repo:tag). Required when enable_phase3 is true."
   type        = string
-  # PLACEHOLDER — verify against Bedrock console in the target account/region
-  default = "amazon.titan-embed-text-v2:0"
+  default     = ""
+
+  validation {
+    condition     = !var.enable_phase3 || length(trimspace(var.chat_container_image)) > 0
+    error_message = "chat_container_image must be set when enable_phase3 = true."
+  }
+}
+
+variable "opensearch_index" {
+  description = "OpenSearch index name for inventory documents."
+  type        = string
+  default     = "inventory-items"
+}
+
+variable "opensearch_bootstrap_principal_arns" {
+  description = "Extra IAM principal ARNs allowed to manage the inventory index (e.g. developer user for create_opensearch_index.py)."
+  type        = list(string)
+  default     = []
 }

@@ -18,28 +18,9 @@ variable "data_bucket_arn" {
   type        = string
 }
 
-variable "bedrock_claude_inference_profile_id" {
-  description = "Bedrock inference profile ID used for invoking the Claude model."
-
-  type = string
-
-  default = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-}
-
-variable "bedrock_claude_foundation_model_id" {
-  description = "Bedrock foundation model ID for the Claude model."
-
-  type = string
-
-  default = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-}
-
-variable "bedrock_titan_embedding_model_id" {
-  description = "Bedrock foundation model ID for the Titan Embeddings V2 model."
-
-  type = string
-
-  default = "amazon.titan-embed-text-v2:0"
+variable "provider_secrets_arn" {
+  description = "ARN of the Secrets Manager secret containing external provider API keys."
+  type        = string
 }
 
 variable "common_tags" {

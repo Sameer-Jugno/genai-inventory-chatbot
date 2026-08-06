@@ -20,7 +20,9 @@ locals {
 }
 
 resource "aws_s3_bucket" "this" {
-  bucket = local.bucket_name
+  bucket        = local.bucket_name
+  # POC cost control: allow `terraform destroy` / stack-down with objects present.
+  force_destroy = true
 
   tags = merge(
     var.common_tags,

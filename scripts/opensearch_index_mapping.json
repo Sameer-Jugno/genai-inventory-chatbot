@@ -1,0 +1,67 @@
+{
+  "settings": {
+    "index": {
+      "knn": true
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "item_id": { "type": "keyword" },
+      "vendor": { "type": "keyword" },
+      "source_type": { "type": "keyword" },
+      "source_ref": { "type": "keyword" },
+      "source_item_id": { "type": "keyword" },
+      "source_page": { "type": "integer" },
+      "name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword", "ignore_above": 512 }
+        }
+      },
+      "description": { "type": "text" },
+      "category": { "type": "keyword" },
+      "subcategory": { "type": "keyword" },
+      "product_url": { "type": "keyword", "index": false },
+      "model_3d_url": { "type": "keyword", "index": false },
+      "dimensions_text": { "type": "text" },
+      "dimensions": {
+        "properties": {
+          "length": { "type": "float" },
+          "width": { "type": "float" },
+          "depth": { "type": "float" },
+          "height": { "type": "float" },
+          "diameter": { "type": "float" },
+          "unit": { "type": "keyword" }
+        }
+      },
+      "quantity": { "type": "float" },
+      "unit_price": { "type": "float" },
+      "currency": { "type": "keyword" },
+      "features": { "type": "text" },
+      "colors": { "type": "keyword" },
+      "service_areas": { "type": "keyword" },
+      "tags": { "type": "keyword" },
+      "tag_source": { "type": "keyword" },
+      "image_refs": { "type": "keyword" },
+      "ingested_at": { "type": "date", "format": "epoch_second" },
+      "schema_version": { "type": "integer" },
+      "source_quality": { "type": "integer" },
+      "raw_excerpt": { "type": "text", "index": false },
+      "search_text": { "type": "text" },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 1024,
+        "method": {
+          "name": "hnsw",
+          "space_type": "cosinesimil",
+          "engine": "faiss",
+          "parameters": {
+            "ef_construction": 128,
+            "m": 16
+          }
+        }
+      }
+    }
+  }
+}

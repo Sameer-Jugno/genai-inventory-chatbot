@@ -35,7 +35,19 @@ availability_zones = [
   "us-east-1b"  # PLACEHOLDER
 ]
 
-# Confirm in Bedrock console after model access is enabled in the account.
-bedrock_claude_inference_profile_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0" # PLACEHOLDER
-bedrock_claude_foundation_model_id  = "anthropic.claude-sonnet-4-5-20250929-v1:0"    # PLACEHOLDER
-bedrock_titan_embedding_model_id    = "amazon.titan-embed-text-v2:0"                 # PLACEHOLDER
+# External providers (used while Bedrock account access is blocked).
+groq_model_id     = "llama-3.3-70b-versatile"
+hf_embed_model_id = "BAAI/bge-large-en-v1.5"
+
+# IAM + Phase 2/3 gates (keep false until lead grants iam:CreateRole).
+enable_iam     = false
+enable_phase2  = false
+enable_phase3  = false
+
+# Required when enable_phase3 = true (after docker push to ECR).
+# chat_container_image = "ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/inventory-planner-dev-chat-app:latest"
+
+# Optional: your IAM user/role ARN so scripts/create_opensearch_index.py can run.
+opensearch_bootstrap_principal_arns = [
+  "arn:aws:iam::106295459576:user/inventory-planner-dev"
+]

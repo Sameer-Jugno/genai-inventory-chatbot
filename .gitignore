@@ -11,9 +11,32 @@ tfplan
 # The lock file under terraform/envs/*/ IS committed.
 terraform/modules/**/.terraform.lock.hcl
 
+# Lambda build artifacts
+dist/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Scraper local output
+scraper/out/
+
 # Secrets
 .env
 
 # Confidential client documents — keep local only
 SOW*.pdf
 *Architecture*.png
+docs/**/*.pdf
+docs/**/*.pdf.pdf
+docs/**/*.docx
+docs/**/*.csv
+docs/CW_Samples/
+
+# Local secrets / backups
+.env.*
+!.env.example
+
+# Personal Terraform keeps and binary plans
+*.KEEP
+terraform/envs/**/tfplan*

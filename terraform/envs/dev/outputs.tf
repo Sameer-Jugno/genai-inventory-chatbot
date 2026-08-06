@@ -70,15 +70,55 @@ output "dynamodb_table_name" {
 
 output "ecs_task_execution_role_arn" {
   description = "IAM role ARN used by ECS to pull images and write logs."
-  value       = module.iam.ecs_task_execution_role_arn
+  value       = try(module.iam[0].ecs_task_execution_role_arn, null)
 }
 
 output "ecs_task_role_arn" {
   description = "IAM role ARN assumed by the chat application containers."
-  value       = module.iam.ecs_task_role_arn
+  value       = try(module.iam[0].ecs_task_role_arn, null)
 }
 
 output "lambda_execution_role_arn" {
-  description = "IAM role ARN for the future ingestion Lambda."
-  value       = module.iam.lambda_execution_role_arn
+  description = "IAM role ARN for the ingestion Lambda."
+  value       = try(module.iam[0].lambda_execution_role_arn, null)
+}
+
+output "opensearch_collection_endpoint" {
+  description = "OpenSearch Serverless collection endpoint (null until enable_phase2)."
+  value       = try(module.opensearch[0].collection_endpoint, null)
+}
+
+output "opensearch_collection_arn" {
+  description = "OpenSearch Serverless collection ARN (null until enable_phase2)."
+  value       = try(module.opensearch[0].collection_arn, null)
+}
+
+output "ingestion_function_name" {
+  description = "Ingestion Lambda function name (null until enable_phase2)."
+  value       = try(module.ingestion_lambda[0].function_name, null)
+}
+
+output "ingestion_dlq_url" {
+  description = "Ingestion dead-letter queue URL (null until enable_phase2)."
+  value       = try(module.ingestion_lambda[0].dlq_url, null)
+}
+
+output "chat_ecs_cluster_name" {
+  description = "ECS cluster name for the chat service (null until enable_phase3)."
+  value       = try(module.ecs_chat[0].cluster_name, null)
+}
+
+output "chat_ecs_service_name" {
+  description = "ECS service name for the chat application (null until enable_phase3)."
+  value       = try(module.ecs_chat[0].service_name, null)
+}
+
+output "chat_log_group_name" {
+  description = "CloudWatch log group for the chat tasks (null until enable_phase3)."
+  value       = try(module.ecs_chat[0].log_group_name, null)
+}
+
+output "provider_secrets_arn" {
+  description = "Secrets Manager ARN for GROQ_API_KEY + HF_TOKEN (null until enable_iam)."
+  value       = try(module.provider_secrets[0].secret_arn, null)
 }
