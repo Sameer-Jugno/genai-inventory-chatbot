@@ -1,0 +1,103 @@
+Inventory Planner / CandyWagon — Dataset Analytics
+Generated for demo readiness (live AWS state)
+================================================
+
+SUMMARY
+-------
+Queryable in OpenSearch right now : 590 items
+Files fully ingested               : 4
+Files on S3 but NOT indexed yet    : 2 (PDF extraction blocked earlier by Groq quota)
+Files held for live ingest demo    : 1
+Files skipped on purpose           : several (see below)
+
+
+A) FULLY INGESTED — available for chat queries
+----------------------------------------------
+Source file (local name)                          S3 prefix / indexed as
+------------------------------------------------  ------------------------------------------
+formatted_chair_inventory_with_links_and_tags.txt uploads/demo-vendor/...
+CW Asset Inventory .xlsx                          uploads/candywagon/CW-Asset-Inventory.xlsx
+acme_brooklyn_prop_chairs (1).xlsx                uploads/acme-brooklyn/acme_brooklyn_prop_chairs.xlsx
+taylor_creative_ny_collection_seating.xlsx        uploads/taylor-creative/taylor_creative_ny_collection_seating.xlsx
+
+Indexed breakdown (OpenSearch live counts):
+
+  Source file                                         Items  Photos  Priced  Qty   Links
+  --------------------------------------------------  -----  ------  ------  ----  -----
+  formatted_chair_inventory_with_links_and_tags.txt     200       0     200   200    200
+  taylor_creative_ny_collection_seating.xlsx            192       1       0   192    192
+  acme_brooklyn_prop_chairs.xlsx                        115     115     115   115    115
+  CW-Asset-Inventory.xlsx                                83      57       0     0     54
+  TOTAL                                                 590     173     315   507    561
+
+By vendor folder / display source:
+  demo-vendor      200   (ACME chairs txt — prices + product links, no stored photos)
+  taylor-creative  192   (Taylor seating — qty + links, almost no photos)
+  acme-brooklyn    115   (ACME xlsx — prices + qty + photos)
+  candywagon        83   (CW Asset Inventory — photos + some links, no prices/qty)
+
+What each is good for in demo queries:
+  - Photos / visual cards     → CW Asset Inventory, ACME xlsx
+  - Price / budget filters    → ACME txt, ACME xlsx
+  - Color + qty filters       → ACME catalogs
+  - Alternate vendor seating  → Taylor Creative
+
+
+B) ON S3 — NOT YET IN OPENSEARCH
+--------------------------------
+  BroadwayPartyRentalsCustomCatalog.pdf
+    Local: docs/CW_Samples/BroadwayPartyRentalsCustomCatalog-1699921858.pdf.pdf
+    S3:    uploads/broadway/BroadwayPartyRentalsCustomCatalog.pdf
+    Why not indexed: PDF extraction needs Groq; hit free-tier rate limit during upload wave.
+    Status: file is safe on S3; can re-trigger ingest when quota allows.
+
+  The Glasshouse Inventory Catalogue.pdf
+    Local: docs/The Glasshouse Inventory Catalogue.pdf
+    S3:    uploads/glasshouse/The-Glasshouse-Inventory-Catalogue.pdf
+    Why not indexed: same Groq PDF extraction rate-limit issue.
+    Status: on S3 only; not queryable in chat yet.
+
+
+C) HELD FOR LIVE “HOW INGESTION WORKS” DEMO (not uploaded)
+----------------------------------------------------------
+  taylor_creative_ny_collection_seating (2).xlsx
+    Local only: docs/CW_Samples/taylor_creative_ny_collection_seating (2).xlsx
+    Why held: small clean XLSX; ingest works without Groq (good live demo).
+    Demo upload command:
+      aws s3 cp "docs/CW_Samples/taylor_creative_ny_collection_seating (2).xlsx" \
+        s3://inventory-planner-dev-data-106295459576/uploads/taylor-creative/taylor_creative_ny_collection_seating_v2.xlsx
+    Then ask e.g. “What Agave seating do you have?”
+
+
+D) SKIPPED ON PURPOSE — do not use for demo catalog
+---------------------------------------------------
+  Musical Chair - Sheet1.csv
+    Reason: blog/marketing prose, not inventory rows.
+
+  formatted_chair_inventory.txt
+    Reason: same ~190 ACME chairs already covered by the “with_links_and_tags” file.
+
+  taylor_creative_ny_collection_seating (1).xlsx
+    Reason: exact duplicate of the Taylor file already ingested (192/192 name overlap).
+
+  New York City Prop Chair Rentals _ Chair Rental in Brooklyn.pdf  (~104 MB, 242 pages)
+    Reason: scraped ACME website dump; largely overlaps ACME chair data already indexed;
+            too large / slow for Lambda ingest in this POC.
+
+
+E) IMPORTANT DEMO CAVEAT
+------------------------
+  No single source has BOTH rich photos AND complete prices for every item.
+  CW Asset = photos, little/no price.
+  ACME catalogs = prices/qty/links; xlsx also has photos.
+  Plan demo questions accordingly (see APPLICATION_FLOW.txt “Demo query tips”).
+
+
+F) DATA PATH (how a file becomes queryable)
+-------------------------------------------
+  Local sample file
+    → aws s3 cp … s3://inventory-planner-dev-data-…/uploads/<vendor>/<file>
+    → S3 event triggers Lambda inventory-planner-dev-ingestion
+    → parse (csv/xlsx/txt/pdf) → optional image store under images/
+    → embed (Hugging Face bge-large) → upsert OpenSearch Serverless
+    → Chat searches OpenSearch and returns grounded cards
