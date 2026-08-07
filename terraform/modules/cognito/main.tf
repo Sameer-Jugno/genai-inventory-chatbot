@@ -33,7 +33,8 @@ resource "aws_cognito_user_pool" "this" {
   }
 
   admin_create_user_config {
-    allow_admin_create_user_only = true
+    # POC: allow SignUp so any demo visitor can register via the chat login form.
+    allow_admin_create_user_only = false
   }
 
   # Deliberately disabled for this POC to simplify teardown.

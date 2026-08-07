@@ -1,0 +1,8 @@
+# Chat service runtime dependencies (ECS image + local Chainlit).
+boto3>=1.34,<2
+botocore>=1.34,<2
+opensearch-py>=2.4,<3
+requests-aws4auth>=1.2,<2
+pydantic>=2,<3
+PyJWT[crypto]>=2.8,<3
+chainlit>=1.3,<3

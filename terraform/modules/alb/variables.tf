@@ -23,3 +23,9 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_forward" {
+  description = "When true, forward HTTP to the chat target group (Phase 3 ECS). When false, return 503."
+  type        = bool
+  default     = false
+}

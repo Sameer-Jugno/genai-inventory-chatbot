@@ -1,7 +1,7 @@
 /*
 Purpose:
 Creates the Amazon ECR repository holding the container image for the
-Inventory Planner chat application (Chainlit interface + Strands agent) that
+Inventory Planner chat application (Chainlit interface + Bedrock Converse agent) that
 runs on ECS Fargate.
 
 NOTE:

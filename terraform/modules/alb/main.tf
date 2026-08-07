@@ -4,12 +4,11 @@ Creates the networking resources required to expose the Inventory Planner chat
 application through an internet-facing Application Load Balancer (ALB).
 
 NOTE:
-The target group is intentionally created without registered targets.
-ECS Fargate service registration occurs in Module 4.1.
+The target group is intentionally created without registered targets until
+Phase 3 (`enable_forward = true`) registers the ECS Fargate service.
 
-The listener intentionally returns a temporary 503 fixed response.
-Module 4.1 will update the listener to forward traffic to the target
-group once the ECS Fargate service has been deployed.
+When enable_forward is false the listener returns 503. When true it forwards
+to the target group used by terraform/modules/ecs_chat.
 */
 
 locals {
@@ -66,16 +65,17 @@ resource "aws_lb" "this" {
   )
 }
 
-# This target group currently has no registered targets.
-# ECS Fargate service registration happens in Module 4.1.
-# This resource exists now so the listener below has a valid,
-# real target group to route to once traffic is actually flowing.
+# Target group exists before ECS so Phase 3 can register tasks without
+# recreating the ALB listener dependency graph.
 resource "aws_lb_target_group" "this" {
   name        = local.target_group_name
   port        = 8000
   protocol    = "HTTP"
   target_type = "ip"
   vpc_id      = var.vpc_id
+
+  # Keep short so single-task Fargate rollouts are not blocked for 5 minutes.
+  deregistration_delay = 30
 
   health_check {
     enabled             = true
@@ -96,23 +96,29 @@ resource "aws_lb_target_group" "this" {
   )
 }
 
-# Temporary placeholder default action.
-# Module 4.1 will update this to forward to the target group
-# above once the ECS Fargate service exists.
-# This must be changed manually (or via a follow-up Terraform
-# update) — it will not resolve itself.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
-    type = "fixed-response"
+  dynamic "default_action" {
+    for_each = var.enable_forward ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.this.arn
+    }
+  }
 
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Service not yet deployed"
-      status_code  = "503"
+  dynamic "default_action" {
+    for_each = var.enable_forward ? [] : [1]
+    content {
+      type = "fixed-response"
+
+      fixed_response {
+        content_type = "text/plain"
+        message_body = "Service not yet deployed"
+        status_code  = "503"
+      }
     }
   }
 

@@ -13,9 +13,9 @@ responsible for setting this value on write (e.g., session creation
 time + 30 days); Terraform only enables the feature, it does not set
 expiry values on individual items.
 
-No secondary indexes are defined — the only access pattern (fetch by
-session_id, ordered by timestamp) is fully served by the base table's
-key schema.
+Access patterns:
+  1) Fetch one session's turns: Query base table by session_id, ordered by timestamp
+  2) List a user's sessions: Query GSI user_sub-index by user_sub, newest first
 */
 
 locals {
@@ -37,6 +37,18 @@ resource "aws_dynamodb_table" "this" {
   attribute {
     name = "timestamp"
     type = "N"
+  }
+
+  attribute {
+    name = "user_sub"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "user_sub-index"
+    hash_key        = "user_sub"
+    range_key       = "timestamp"
+    projection_type = "ALL"
   }
 
   ttl {
