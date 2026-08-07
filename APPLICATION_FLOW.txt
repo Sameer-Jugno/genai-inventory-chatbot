@@ -1,0 +1,381 @@
+Inventory Planner / CandyWagon — Complete Application Flow
+==========================================================
+
+Purpose of this document
+------------------------
+  End-to-end explanation of how the live demo app works: who can log in,
+  how a chat turn is answered, how history is stored, how catalog data is
+  ingested, and what AWS pieces sit behind the URL.
+
+  For normal demo chatting you only need the live URL. You do not run Docker,
+  Terraform, or a local server.
+
+
+================================================================================
+1) DEMO ENTRY POINT
+================================================================================
+
+  Live chat URL (Application Load Balancer → ECS Fargate Chainlit app):
+
+    http://inventory-planner-dev-alb-1877790994.us-east-1.elb.amazonaws.com/
+
+  Pre-seeded demo account:
+    Email:    demo@example.com
+    Password: DemoPass123!
+
+  Self-service (any visitor):
+    Use the SAME login form with any email + a valid password.
+    There is no separate "Sign up" screen (Chainlit limitation).
+    First successful attempt creates the Cognito user, auto-confirms it,
+    then logs them in.
+
+  Password rules (Cognito + app validation):
+    - at least 8 characters
+    - at least one uppercase letter
+    - at least one lowercase letter
+    - at least one number
+    - symbols not required
+    Example that works: Sameer123   /   DemoPass123!
+
+  If the password fails policy, Chainlit often shows a generic
+  "Unable to sign in" / "Unauthorized: credentialssignin" toast.
+  The real reason is in CloudWatch (/ecs/inventory-planner-dev-chat), e.g.
+  "password must be at least 8 characters".
+
+
+================================================================================
+2) HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+  [Browser]
+      |
+      |  HTTP(S) to ALB
+      v
+  [Application Load Balancer]
+      |
+      v
+  [ECS Fargate — Chainlit UI + Python chat agent]
+      |-- Cognito User Pool          login / JWT / self-signup
+      |-- DynamoDB sessions table    durable chat history (+ GSI by user)
+      |-- OpenSearch Serverless      vector + filtered inventory search
+      |-- S3 data bucket             uploads/ (ingest) + images/ (photos)
+      |-- Secrets Manager            Groq keys, HF token, Chainlit secret
+      |-- Groq API                   LLM reasoning + tool calls (+ PDF extract)
+      |-- Hugging Face API           query / document embeddings (bge-large)
+
+  Separate from the browser chat path (admin / live ingest demo):
+
+  [Upload to S3 uploads/] → [Lambda ingestion] → [OpenSearch + S3 images/]
+
+
+================================================================================
+3) AUTHENTICATION FLOW (detailed)
+================================================================================
+
+  A. Browser password form (primary demo path)
+     1. User opens ALB URL → Chainlit "Login to access the app"
+     2. Submits email + password
+     3. password_auth_callback → CognitoJwtVerifier.authenticate_password()
+     4. App validates email format + password policy locally
+     5. Tries Cognito InitiateAuth (USER_PASSWORD_AUTH)
+        - Success → verify access JWT via JWKS → Chainlit User
+        - NotAuthorized / UserNotFound / Unconfirmed → continue below
+     6. If Cognito user already exists but unconfirmed:
+        AdminConfirmSignUp → retry login
+     7. If brand-new email:
+        SignUp (email as username) → AdminConfirmSignUp → login
+     8. Chainlit User metadata stores Cognito "sub" (stable user id)
+
+  B. API / header path (optional)
+     Authorization: Bearer <Cognito access token>
+     header_auth_callback verifies JWT (issuer, client_id, token_use=access)
+
+  C. Cognito pool settings that matter
+     - allow_admin_create_user_only = false  → self-service SignUp allowed
+     - ECS task role can SignUp, AdminConfirmSignUp, AdminGetUser, InitiateAuth
+     - Email is username; each Cognito "sub" owns that user's chat threads
+
+
+================================================================================
+4) SESSION / HISTORY FLOW (detailed)
+================================================================================
+
+  Status: YES — session history is working on the live ALB deployment.
+  Messages are written to DynamoDB and replayed on refresh / re-login.
+  "New chat" and "Resume N" actions switch durable threads for the same user.
+
+  Identity
+  --------
+  Every logged-in user has Cognito sub = S.
+  Thread (session) ids:
+    user:S              legacy single-thread id (still resumed if it has turns)
+    user:S:<uuid>       extra threads created by "New chat"
+  Anonymous fallback (should not happen in normal browser login): random UUID
+
+  DynamoDB table: inventory-planner-dev-sessions
+    Partition key: session_id
+    Sort key:      created_at (message timestamp)
+    Attributes:    role, content, user_sub, ttl, …
+    GSI:           user_sub-index  (list newest threads for a user)
+
+  On chat start (after login)
+  ---------------------------
+  1. Read Cognito sub from Chainlit user metadata
+  2. Query GSI for this user's newest session (limit 1)
+     - If found → resume that session_id
+     - Else try legacy id user:<sub> if it has messages
+     - Else create user:<sub>:<uuid>
+  3. Load up to 100 prior messages from DynamoDB
+  4. If history exists → replay USER/ASSISTANT turns in the UI
+     If empty → show Candywagon welcome message
+  5. Attach action buttons:
+       - New chat
+       - Resume 1 … Resume N  (other threads for this user, up to 4)
+
+  On each user message
+  --------------------
+  1. Append USER message to DynamoDB (with user_sub)
+  2. Load recent messages for this session_id
+  3. Build model-facing history (gallery / long card text stripped + trimmed)
+  4. Agent answers (see section 5)
+  5. Append ASSISTANT message to DynamoDB
+  6. Re-render action buttons for New chat / Resume
+
+  New chat
+  --------
+  Creates a fresh session_id = user:<sub>:<new-uuid>
+  Old threads remain in DynamoDB and can be resumed later.
+
+  Resume N
+  --------
+  Switches to another session_id owned by this user (ownership check),
+  loads that thread's messages, and replays them.
+
+  Refresh / sign out / sign in
+  ----------------------------
+  Same Cognito email → same sub → newest thread auto-resumed from DynamoDB.
+  This is real server-side persistence, not browser-only state.
+  TTL: session rows expire after ~30 days (SESSION_TTL_DAYS).
+
+  Note on very old random session UUIDs
+  -------------------------------------
+  Early POC turns used random UUIDs. Those can still appear via the GSI if
+  they were later stamped with user_sub. New work uses user:<sub>:… ids.
+
+
+================================================================================
+5) CHAT QUESTION FLOW (what happens when you ask something)
+================================================================================
+
+  Example: "Show me yellow chairs under $100 for 4 guests"
+
+  Step 1 — Persist & prepare
+    Save the user text to DynamoDB.
+    Load prior turns; strip catalog-card / gallery markdown before the LLM
+    so history stays within token limits.
+
+  Step 2 — Agent + Groq
+    InventoryChatAgent sends the conversation to Groq with tools available.
+    Persona: Candywagon event-rental planner; grounded on indexed inventory;
+    should refuse off-catalog asks (catering, DJ booking, live availability
+    confirmation, etc.) and redirect to searchable rentals.
+
+  Step 3 — Deterministic filters from the user text (when present)
+    Parsed before / alongside search so OpenSearch can filter hard:
+      - max price     e.g. under $100, below 90
+      - min quantity / guest count
+      - color         e.g. yellow, blue
+    Soft semantic intent still comes from the embedding of the query text.
+
+  Step 4 — Tool: search_inventory
+    1. Embed the query with Hugging Face (bge-large, 1024-d)
+    2. k-NN search in OpenSearch Serverless index "inventory-items"
+       plus filter clauses for price / qty / color when present
+    3. For hits with image_refs → attach short-lived presigned S3 URLs
+       from s3://…/images/…
+
+  Step 5 — Answer composition
+    Groq writes a short grounded narrative from the tool results.
+    App appends structured "Matching catalog items" cards:
+      name, price, qty, vendor/source, tags, details,
+      Open image / Product page links when available.
+    If Groq is rate-limited on ALL keys, app can still fall back to
+    direct OpenSearch results (less narrative polish, still useful).
+
+  Step 6 — Persist & render
+    Save the full assistant message (narrative + cards) to DynamoDB.
+    Chainlit shows it in the browser with New chat / Resume actions.
+
+
+================================================================================
+6) INGESTION FLOW (how catalog data enters OpenSearch)
+================================================================================
+
+  Trigger
+  -------
+  Admin (or demo) uploads a file to:
+
+    s3://inventory-planner-dev-data-106295459576/uploads/<vendor>/<filename>
+
+  S3 ObjectCreated event invokes Lambda: inventory-planner-dev-ingestion
+
+  Lambda steps
+  ------------
+  1. Download object from S3
+  2. Detect type: .csv / .xlsx / .txt / .pdf / .html
+  3. Parse into inventory records (parser per type)
+  4. Store embedded or fetched images under s3://…/images/…
+  5. Embed each item text with Hugging Face
+  6. Upsert documents into OpenSearch index "inventory-items"
+  7. Chat can search them as soon as ingest finishes
+
+  Parsing notes
+  -------------
+  - Structured XLSX / CSV / TXT: no Groq needed for parsing
+  - PDF catalogs: Groq LLM extraction (subject to Groq rate limits)
+  - Failed PDF extracts leave the file on S3 but not queryable until re-run
+
+  Live ingest demo file (kept local until needed)
+  -----------------------------------------------
+    docs/CW_Samples/taylor_creative_ny_collection_seating (2).xlsx
+
+    aws s3 cp "docs/CW_Samples/taylor_creative_ny_collection_seating (2).xlsx" \
+      s3://inventory-planner-dev-data-106295459576/uploads/taylor-creative/taylor_creative_ny_collection_seating_v2.xlsx
+
+    Wait for Lambda success → ask e.g. "What Agave seating do you have?"
+    Details / counts: see DATASET_ANALYTICS.txt
+
+
+================================================================================
+7) DATA REALITY (what is searchable today)
+================================================================================
+
+  Queryable in OpenSearch: ~590 items from 4 sources
+
+  Source                                         Strength
+  ---------------------------------------------  ---------------------------
+  ACME txt (demo-vendor)                         prices + links (no photos)
+  ACME brooklyn xlsx                             prices + qty + photos
+  CW Asset Inventory xlsx                        photos (+ some links)
+  Taylor Creative seating xlsx                   qty + links (almost no photos)
+
+  On S3 but NOT indexed yet (PDF / Groq quota earlier):
+    BroadwayPartyRentalsCustomCatalog.pdf
+    The Glasshouse Inventory Catalogue.pdf
+
+  Suggested demo queries
+  ----------------------
+    Show me chiavari chairs
+    What ghost chairs do you have?
+    Show me yellow chairs under $100
+    Blue chairs under $90 for 4 guests
+    What seating does Taylor Creative have?
+    Book catering and a DJ for 200 guests     ← should refuse / redirect
+
+  Important honesty for stakeholders
+  ----------------------------------
+  No single source has both rich photos AND full prices for everything.
+  Cards may show price without photo, or photo without price, depending
+  on which vendor hit matched.
+
+
+================================================================================
+8) GROQ KEY FAILOVER
+================================================================================
+
+  Secrets Manager secret holds:
+    GROQ_API_KEY
+    GROQ_API_KEY_2
+    HF_TOKEN
+    (+ Chainlit auth secret)
+
+  On HTTP 429 from Groq, the provider cools down that key and switches to
+  the other automatically. Used by chat AND PDF ingestion.
+
+  Groq free-tier limits are rolling windows (not "reset at midnight").
+  If BOTH keys are exhausted:
+    - Chat falls back to direct OpenSearch results when possible
+    - PDF ingest may stall until quota recovers
+
+
+================================================================================
+9) KEY AWS COMPONENTS
+================================================================================
+
+  Networking     VPC, public/private subnets, ALB, security groups
+  Compute        ECS Fargate service (chat), Lambda (ingestion)
+  Images         ECR — immutable tags (e.g. auth-signup-v1)
+  Auth           Cognito User Pool + app client (USER_PASSWORD_AUTH)
+  Storage        DynamoDB sessions, S3 data bucket (uploads/ + images/)
+  Search         OpenSearch Serverless collection / inventory-items index
+  Secrets        inventory-planner-dev-provider-keys (Groq/HF/Chainlit)
+  Observability  CloudWatch Logs for ECS + Lambda
+  IAM            least-privilege task role + Lambda role
+
+  External (not AWS):
+    Groq           LLM + tool calling + PDF extraction
+    Hugging Face   embeddings
+
+
+================================================================================
+10) REQUEST PATH DIAGRAM (one turn)
+================================================================================
+
+  Browser
+    → ALB
+      → ECS Chainlit
+        → Cognito (already logged in; sub in session)
+        → DynamoDB (write user msg; read history)
+        → Groq (reason + maybe call tool)
+            → HF embed query
+            → OpenSearch kNN + filters
+            → S3 presign image URLs
+        → Groq (final narrative)
+        → DynamoDB (write assistant msg)
+        → Browser (narrative + catalog cards + session actions)
+
+
+================================================================================
+11) STACK UP / DOWN (one command — cost control)
+================================================================================
+
+  From the repo root:
+
+    ./scripts/stack-up.sh      # create / refresh full AWS stack
+    ./scripts/stack-down.sh    # destroy everything Terraform manages
+
+  Use stack-down when you are done for the day so OpenSearch + ECS stop billing.
+  After destroy + up, OpenSearch is empty — re-upload catalog files to S3.
+  Details: terraform/envs/dev/README.md
+
+
+================================================================================
+12) WHAT IS / IS NOT LOCAL DURING DEMO
+================================================================================
+
+  On AWS (use the ALB URL only):
+    Chat UI, auth/signup, search, images, sessions, ingest pipeline
+
+  On your laptop (only if showing live upload):
+    AWS CLI + the held Taylor (2) xlsx
+    OR AWS Console upload into the uploads/ prefix
+
+  You do NOT need Docker, Terraform, or a local chat server for normal demo.
+
+
+================================================================================
+13) QUICK TROUBLESHOOTING
+================================================================================
+
+  Symptom                              Likely cause / fix
+  -----------------------------------  -----------------------------------------
+  Unable to sign in / credentialssignin
+                                       Password policy (8+, Aa, digit). Try DemoPass123!
+  Login works but empty chat           New user — expected; ask a question
+  History missing after refresh        Confirm same email; check DynamoDB /
+                                       CloudWatch for session_resumed
+  No photos on cards                   Hit source without image_refs (e.g. ACME txt)
+  No prices on cards                   Hit source without price (e.g. CW / Taylor)
+  Vague / empty answers                Groq both keys 429 → fallback or wait
+  New file uploaded but not found      Wait for Lambda; PDFs need Groq quota
+  Wrong thread after New chat          Use Resume N, or refresh to newest thread
